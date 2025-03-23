@@ -1,43 +1,68 @@
 import os
-import requests
 import time
+import logging
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
+import requests
 
-# Obtener credenciales desde variables de entorno
-TELEGRAM_TOKEN = os.getenv("7859598111:AAFT2gqd6YELtz5ZpSxPEXrFSziYGfeE3gs")
-TELEGRAM_CHAT_ID = os.getenv("1483987781")
+# Configurar logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# URL de la API (debes reemplazarla con la API real que usas)
-API_URL = "https://www.bet365.pe/#/IP/B1"
+# Cargar variables de entorno
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-def enviar_mensaje_telegram(mensaje):
-    """Envía un mensaje a Telegram."""
+# Configurar Selenium
+chrome_options = Options()
+chrome_options.add_argument("--headless")
+chrome_options.add_argument("--disable-gpu")
+chrome_options.add_argument("--no-sandbox")
+chrome_options.add_argument("--disable-dev-shm-usage")
+
+service = Service("/usr/bin/chromedriver")  # Ruta en Render
+
+def send_telegram_message(message):
+    """Envía una notificación a Telegram."""
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    data = {"chat_id": TELEGRAM_CHAT_ID, "text": mensaje}
-    requests.post(url, data=data)
-
-def analizar_partidos():
-    """Consulta la API y filtra partidos con 2 o menos córners entre el minuto 15 y 30."""
+    data = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
     try:
-        response = requests.get(API_URL)
-        partidos = response.json()  # ⚠️ Adapta esto según la estructura de tu API
-        
-        for partido in partidos:
-            minuto = partido["minuto"]  # ⚠️ Verifica cómo se llama este dato en tu API
-            corners = partido["corners_1T"]  # ⚠️ Verifica cómo se llama este dato en tu API
-            
-            if 15 <= minuto <= 30 and corners <= 2:
-                mensaje = f"⚽ Partido {partido['equipo_local']} vs {partido['equipo_visitante']}\n" \
-                          f"📍 Minuto: {minuto}\n" \
-                          f"🔹 Córners en 1T: {corners}\n" \
-                          f"🔔 Posible oportunidad para apostar a córners en 1T"
-                enviar_mensaje_telegram(mensaje)
-                print(f"🔔 Notificación enviada: {mensaje}")
-
+        response = requests.post(url, data=data)
+        if response.status_code == 200:
+            logging.info("Notificación enviada a Telegram")
+        else:
+            logging.error(f"Error enviando mensaje: {response.text}")
     except Exception as e:
-        print(f"⚠️ Error en la API: {e}")
-        enviar_mensaje_telegram(f"⚠️ Error en el bot de córners: {e}")
+        logging.error(f"Error de conexión con Telegram: {e}")
 
-# Ejecutar cada 5 minutos (opcional)
-while True:
-    analizar_partidos()
-    time.sleep(300)  # Esperar 5 minutos antes de la siguiente consulta
+def scrape_bet365():
+    """Extrae datos en vivo de Bet365 usando Selenium."""
+    driver = webdriver.Chrome(service=service, options=chrome_options)
+    driver.get("https://www.bet365.pe/#/IP/B1")
+    time.sleep(5)  # Esperar a que cargue la página
+
+    partidos = driver.find_elements(By.CLASS_NAME, "some-match-class")  # Ajusta esto
+    for partido in partidos:
+        try:
+            minuto = int(partido.find_element(By.CLASS_NAME, "match-minute-class").text.replace("'", ""))
+            corners = int(partido.find_element(By.CLASS_NAME, "corner-count-class").text)
+            
+            if 15 <= minuto <= 30 and corners < 2:
+                mensaje = f"📢 Partido en vivo cumple condiciones: {partido.text}"
+                send_telegram_message(mensaje)
+                logging.info(mensaje)
+        except Exception as e:
+            logging.warning(f"No se pudo extraer datos de un partido: {e}")
+    
+    driver.quit()
+
+def main():
+    while True:
+        logging.info("Iniciando revisión de partidos...")
+        scrape_bet365()
+        logging.info("Esperando 5 minutos antes de la siguiente verificación...")
+        time.sleep(300)  # Revisar cada 5 minutos
+
+if __name__ == "__main__":
+    main()
