@@ -18,4 +18,4 @@ rm chromedriver_linux64.zip
 echo "ChromeDriver instalado correctamente."
 
 echo "Ejecutando el bot..."
-python main.py
+python3 bot_corners.py  # Aquí corregimos el nombre del script que ejecuta tu bot
